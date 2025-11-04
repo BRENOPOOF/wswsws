@@ -1,0 +1,112 @@
+-- 🔒 Anti Sigma & SimpleSpy Detector (Versão Final) - com delay antes do kick
+-- Detecta execução do Sigma Spy e SimpleSpy e envia alerta completo pro Discord
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
+
+local player = Players.LocalPlayer
+local webhook = "https://discord.com/api/webhooks/1435351595217977416/6EP__xmM45ghipMvHWWRXUIF5O7g5BpzWsjwhCRcrEnPRLQBYVJ9LkddRTQc0wKuCrpQ"
+
+-- Pega nome do jogo
+local gameName = "Desconhecido"
+pcall(function()
+	gameName = MarketplaceService:GetProductInfo(game.PlaceId).Name
+end)
+
+-- Função de envio pro webhook
+local function sendWebhook(reason)
+	local avatarUrl = string.format("https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=128&height=128&format=png", player.UserId)
+	local profileUrl = string.format("https://www.roblox.com/users/%d/profile", player.UserId)
+	local jobId = game.JobId ~= "" and game.JobId or "Privado / Studio"
+
+	local data = {
+		["content"] = "TENTOU SKIDDAR NOIS KKJ 💀",
+		["embeds"] = {{
+
+			["title"] = "🚨 Spy Detectado!",
+			["color"] = 16711680,
+			["thumbnail"] = {["url"] = avatarUrl},
+			["fields"] = {
+				{["name"] = "👤 Jogador", ["value"] = player.Name, ["inline"] = true},
+				{["name"] = "🆔 UserId", ["value"] = tostring(player.UserId), ["inline"] = true},
+				{["name"] = "🗺️ Jogo", ["value"] = gameName, ["inline"] = false},
+				{["name"] = "🌍 JobId", ["value"] = jobId, ["inline"] = false},
+				{["name"] = "🔗 Perfil", ["value"] = profileUrl, ["inline"] = false},
+				{["name"] = "📄 Motivo", ["value"] = reason or "Detectado uso de Spy", ["inline"] = false}
+			},
+			["footer"] = {["text"] = "Sistema Anti-Spy • " .. os.date("%d/%m/%Y %H:%M:%S")},
+		}}
+	}
+
+	local body = HttpService:JSONEncode(data)
+	local req = (syn and syn.request) or (http and http.request) or (http_request) or (fluxus and fluxus.request)
+
+	if req then
+		local ok, res = pcall(function()
+			return req({
+				Url = webhook,
+				Method = "POST",
+				Headers = {["Content-Type"] = "application/json"},
+				Body = body
+			})
+		end)
+		if not ok then
+			warn("❌ Falha ao enviar webhook: ", res)
+		end
+	else
+		warn("❌ Seu executor não suporta requisições HTTP externas.")
+	end
+end
+
+-- Helper para enviar webhook e kickar com delay de 2s
+local function sendThenKick(reason, kickMessage)
+	-- envia webhook imediatamente (protegido por pcall)
+	pcall(function() sendWebhook(reason) end)
+	-- aguarda 2 segundos e kicka (task.delay)
+	task.delay(2, function()
+		pcall(function()
+			if player and player.Parent then
+				player:Kick(kickMessage or "⚠️ Detectado e removido pelo Anti-Spy.")
+			end
+		end)
+	end)
+end
+
+-- Salva referências originais
+local oldLoad = loadstring
+local oldHttpGet = game.HttpGet
+
+-- Função utilitária para detectar URLs/strings de spy conhecidas
+local function isKnownSpyUrl(s)
+	if not s then return false end
+	-- Sigma Spy (depthso) e SimpleSpy (raw.githubusercontent.com/78n/SimpleSpy)
+	if tostring(s):find("depthso/Sigma%-Spy") then return true end
+	if tostring(s):find("raw.githubusercontent.com/78n/SimpleSpy") then return true end
+	if tostring(s):find("SimpleSpySource.lua") then return true end
+	return false
+end
+
+-- Hooka loadstring
+getgenv().loadstring = function(code, ...)
+	-- Se o code (string) contiver referências óbvias ao SimpleSpy/Sigma, aciona
+	if typeof(code) == "string" then
+		if code:find("depthso/Sigma%-Spy") or code:find("SimpleSpySource.lua") or code:find("raw.githubusercontent.com/78n/SimpleSpy") or code:find("SimpleSpy") then
+			sendThenKick("Executou Spy via loadstring: " .. (tostring(code):sub(1, 800) or "conteúdo longo"), "⚠️ Detectado usando Spy (loadstring).")
+			return error("Bloqueado pelo Anti-Spy.")
+		end
+	end
+
+	return oldLoad(code, ...)
+end
+
+-- Hooka HttpGet também (captura tentativas de carregar o script diretamente)
+game.HttpGet = function(self, url, ...)
+	if typeof(url) == "string" and isKnownSpyUrl(url) then
+		sendThenKick("Tentou carregar Spy via HttpGet: " .. tostring(url), "⚠️ Detectado tentando carregar Spy.")
+		return error("Bloqueado pelo Anti-Spy.")
+	end
+	return oldHttpGet(self, url, ...)
+end
+
+print("[✅ Anti Spy] Proteção ativada (Sigma & SimpleSpy). Webhook enviado antes do kick; kick em 2s.")
